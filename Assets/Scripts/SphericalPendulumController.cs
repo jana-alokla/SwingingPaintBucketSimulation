@@ -4,16 +4,16 @@ using UnityEngine;
 public class SphericalPendulumController : MonoBehaviour
 {
     [Header("Mass Settings")]
-    [Tooltip("كتلة الدلو الفارغ بالكيلوغرام")]
+    [Tooltip("Mass of the empty bucket in kilograms")]
     public float bucketEmptyMass = 2.0f;
 
-    [Tooltip("كتلة الطلاء الموجودة داخل الدلو بالكيلوغرام")]
+    [Tooltip("Mass of the paint inside the bucket in kilograms")]
     public float paintMass = 1.0f;
 
-    [Tooltip("معدل نقصان كتلة الطلاء kg/s. مؤقتًا إلى أن يتم ربطه بنظام الطلاء")]
+    [Tooltip("Paint mass loss rate in kg/s. Temporary until it is connected to the paint system")]
     public float paintMassFlowRate = 0.02f;
 
-    [Tooltip("تفعيل نقصان الطلاء مع الزمن")]
+    [Tooltip("Enable paint mass loss over time")]
     public bool simulatePaintLoss = true;
 
     [Header("Pendulum Physical Settings")]
@@ -32,29 +32,29 @@ public class SphericalPendulumController : MonoBehaviour
     public float phi = 0.0f;
 
     [Header("Non-Ideal Damping")]
-    [Tooltip("التخامد الأساسي. قيمة صغيرة مثل 0.003 إلى 0.01")]
+    [Tooltip("Base damping. Use a small value such as 0.003 to 0.01")]
     public float damping = 0.005f;
 
-    [Tooltip("مقاومة الهواء. تأثيرها يصبح أوضح عندما تقل الكتلة")]
+    [Tooltip("Air resistance. Its effect becomes more noticeable when the mass decreases")]
     public float airResistanceCoefficient = 0.02f;
 
-    [Tooltip("احتكاك نقطة التعليق. تأثيره يعتمد على الكتلة وطول الحبل")]
+    [Tooltip("Pivot friction. Its effect depends on the mass and rope length")]
     public float pivotFrictionCoefficient = 0.03f;
 
     [Header("Paint Sloshing Inside Bucket")]
-    [Tooltip("تفعيل تأثير تمايل الطلاء داخل الدلو")]
+    [Tooltip("Enable the effect of paint sloshing inside the bucket")]
     public bool enablePaintSloshing = true;
 
-    [Tooltip("قوة تأثير تمايل الطلاء على حركة الدلو")]
+    [Tooltip("Strength of the paint sloshing effect on the bucket motion")]
     public float sloshingStrength = 0.06f;
 
-    [Tooltip("قساوة رجوع الطلاء داخليًا بعد تمايله")]
+    [Tooltip("Internal stiffness that pulls the paint back after sloshing")]
     public float sloshingStiffness = 3.0f;
 
-    [Tooltip("تخامد تمايل الطلاء الداخلي")]
+    [Tooltip("Damping of the internal paint sloshing motion")]
     public float sloshingDamping = 0.8f;
 
-    [Tooltip("مدى تأثر الطلاء الداخلي بسرعة حركة الدلو")]
+    [Tooltip("How much the internal paint is affected by the bucket motion speed")]
     public float sloshingMotionCoupling = 0.35f;
 
     [Header("Simulation Settings")]

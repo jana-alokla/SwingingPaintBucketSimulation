@@ -367,7 +367,7 @@ public class MassSpringRope : MonoBehaviour
         }
 
         // مقدار الانحناء عند الزاوية الكبيرة
-        float maxSag = 0.18f;
+        float maxSag = bendAmount;
 
         for (int i = 1; i < last; i++)
         {
