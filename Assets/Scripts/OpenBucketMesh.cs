@@ -68,7 +68,7 @@ public class OpenBucketMesh : MonoBehaviour
             vertices[bottomInnerStart + i] = new Vector3(cos * holeRadius, bottomY, sin * holeRadius);
         }
 
-        // أول شي منعمل مثلثات للوجه الخارجي، وبعدين منكررها بالعكس للوجه الداخلي
+        // مثلثات الوجه الخارجي، ثم نكررها بالعكس للوجه الداخلي
         int singleSideTriangleCount = segments * 4 * 3;
         int[] triangles = new int[singleSideTriangleCount * 2];
 
@@ -84,12 +84,12 @@ public class OpenBucketMesh : MonoBehaviour
             int topCurrent = i + segments;
             int topNext = next + segments;
 
-            // Face 1
+            // المثلث الأول من الجدار
             triangles[t++] = bottomCurrent;
             triangles[t++] = bottomNext;
             triangles[t++] = topCurrent;
 
-            // Face 2
+            // المثلث الثاني من الجدار
             triangles[t++] = bottomNext;
             triangles[t++] = topNext;
             triangles[t++] = topCurrent;
@@ -105,10 +105,12 @@ public class OpenBucketMesh : MonoBehaviour
             int innerCurrent = bottomInnerStart + i;
             int innerNext = bottomInnerStart + next;
 
+            // المثلث الأول من القاع
             triangles[t++] = outerCurrent;
             triangles[t++] = innerCurrent;
             triangles[t++] = outerNext;
 
+            // المثلث الثاني من القاع
             triangles[t++] = innerCurrent;
             triangles[t++] = innerNext;
             triangles[t++] = outerNext;
@@ -131,14 +133,5 @@ public class OpenBucketMesh : MonoBehaviour
         mesh.RecalculateBounds();
 
         meshFilter.sharedMesh = mesh;
-
-        MeshCollider meshCollider = GetComponent<MeshCollider>();
-        if (meshCollider == null)
-        {
-            meshCollider = gameObject.AddComponent<MeshCollider>();
-        }
-
-        meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = mesh;
     }
 }

@@ -7,6 +7,7 @@ public class SimulationUIController : MonoBehaviour
     [Header("Simulation References")]
     public SphericalPendulumController pendulumController;
     public MassSpringRope ropeController;
+    public BucketSimulation3D bucketFluidSimulation;
 
     [Header("Sliders - Pendulum")]
     public Slider ropeLengthSlider;
@@ -401,6 +402,11 @@ public class SimulationUIController : MonoBehaviour
         if (ropeController != null)
         {
             ropeController.ResetRope();
+        }
+
+        if (bucketFluidSimulation != null)
+        {
+            bucketFluidSimulation.ResetFluid();
         }
 
         UpdateValueTexts();

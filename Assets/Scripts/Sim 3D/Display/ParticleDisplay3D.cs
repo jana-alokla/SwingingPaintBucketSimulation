@@ -54,6 +54,37 @@ public class ParticleDisplay3D : MonoBehaviour
         needsUpdate = true;
     }
 
+    public void Init(BucketSimulation3D sim)
+    {
+        if (sim == null)
+        {
+            Debug.LogError("ParticleDisplay3D Init failed: BucketSimulation3D is null.");
+            return;
+        }
+
+        if (shader == null)
+        {
+            Debug.LogError("ParticleDisplay3D Init failed: Shader is not assigned.");
+            return;
+        }
+
+        mat = new Material(shader);
+
+        mat.SetBuffer("Positions", sim.positionBuffer);
+        mat.SetBuffer("Velocities", sim.velocityBuffer);
+
+        mesh = SebStuff.SphereGenerator.GenerateSphereMesh(meshResolution);
+        debug_MeshTriCount = mesh.triangles.Length / 3;
+
+        ComputeHelper.Release(argsBuffer);
+        argsBuffer = ComputeHelper.CreateArgsBuffer(mesh, sim.positionBuffer.count);
+
+        bounds = new Bounds(Vector3.zero, Vector3.one * 10000);
+
+        initialized = true;
+        needsUpdate = true;
+    }
+
     private void LateUpdate()
     {
         if (!initialized || mat == null || mesh == null || argsBuffer == null)
