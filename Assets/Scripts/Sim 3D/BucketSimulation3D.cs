@@ -236,9 +236,17 @@ public class BucketSimulation3D : MonoBehaviour
         float3[] allPoints = new float3[data.points.Length];
         System.Array.Copy(data.points, allPoints, data.points.Length);
 
+        // Reset all velocities to zero
+        float3[] zeroVelocities = new float3[data.points.Length];
+
+        for (int i = 0; i < zeroVelocities.Length; i++)
+        {
+            zeroVelocities[i] = new float3(0f, 0f, 0f);
+        }
+
         positionBuffer.SetData(allPoints);
         predictedPositionsBuffer.SetData(allPoints);
-        velocityBuffer.SetData(data.velocities);
+        velocityBuffer.SetData(zeroVelocities);
     }
 
     [ContextMenu("Reset Bucket Fluid")]
@@ -247,6 +255,7 @@ public class BucketSimulation3D : MonoBehaviour
         isPaused = true;
 
         spawnData = spawner.GetSpawnData();
+
         SetInitialBufferData(spawnData);
         SetInitialParticleStates(spawnData.points.Length);
 
