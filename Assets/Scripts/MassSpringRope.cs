@@ -1,9 +1,11 @@
 using UnityEngine;
 
-public struct RopeNode
+public struct SpringRopeNode
 {
     public Vector3 position;
-    public Vector3 previousPosition;
+    public Vector3 velocity;
+    public Vector3 force;
+    public float mass;
 }
 
 [ExecuteAlways]
@@ -18,28 +20,52 @@ public class MassSpringRope : MonoBehaviour
     public float ropeLength = 4.1f;
     public int nodeCount = 45;
 
-    [Header("Verlet Physics")]
+    [Header("Mass-Spring Physics")]
+    [Tooltip("Keep this very small because bucket mass is much bigger than rope mass.")]
+    public float nodeMass = 0.003f;
+
+    [Tooltip("Higher = tighter rope.")]
+    public float stiffness = 3000f;
+
+    [Tooltip("Higher = less rope vibration.")]
+    public float springDamping = 70f;
+
     public Vector3 gravity = new Vector3(0f, -9.81f, 0f);
 
+    [Tooltip("Gravity effect on rope only. Small value keeps rope taut.")]
+    [Range(0f, 1f)]
+    public float ropeGravityScale = 0.08f;
+
     [Range(0.90f, 1.0f)]
-    public float damping = 0.995f;
+    public float globalDamping = 0.995f;
 
-    [Tooltip("Higher = rope keeps its length better.")]
-    public int constraintIterations = 25;
+    [Tooltip("Higher = more stable rope.")]
+    public int subSteps = 20;
 
-    [Tooltip("Higher = more stable simulation.")]
-    public int subSteps = 4;
+    [Header("Taut Rope Control")]
+    [Tooltip("Near 1 means rope is almost not stretchable.")]
+    public float maxStretchRatio = 1.03f;
+
+    [Tooltip("Higher = rope keeps length better.")]
+    public int lengthCorrectionIterations = 18;
+
+    [Tooltip("Limits excessive velocity to prevent rope explosion.")]
+    public float maxVelocity = 6f;
+
+    [Tooltip("How much the rope is allowed to visually sag. Lower = straighter.")]
+    [Range(0f, 1f)]
+    public float bendAmount = 0.18f;
 
     [Header("Visual")]
-    public float ropeWidth = 0.06f;
+    public float ropeWidth = 0.045f;
     public Material ropeMaterial;
 
     [Header("Editor Preview")]
     public bool drawInEditor = true;
 
-    private RopeNode[] nodes;
+    private SpringRopeNode[] nodes;
     private LineRenderer lineRenderer;
-    private float distanceBetweenNodes;
+    private float restLength;
     private bool initialized;
 
     private void Awake()
@@ -56,8 +82,13 @@ public class MassSpringRope : MonoBehaviour
     {
         ropeLength = Mathf.Max(0.1f, ropeLength);
         nodeCount = Mathf.Max(3, nodeCount);
-        constraintIterations = Mathf.Max(1, constraintIterations);
+        nodeMass = Mathf.Max(0.0001f, nodeMass);
+        stiffness = Mathf.Max(1f, stiffness);
+        springDamping = Mathf.Max(0f, springDamping);
         subSteps = Mathf.Max(1, subSteps);
+        maxStretchRatio = Mathf.Max(1.001f, maxStretchRatio);
+        lengthCorrectionIterations = Mathf.Max(0, lengthCorrectionIterations);
+        maxVelocity = Mathf.Max(0.1f, maxVelocity);
         ropeWidth = Mathf.Max(0.001f, ropeWidth);
 
         if (!Application.isPlaying && drawInEditor)
@@ -95,12 +126,14 @@ public class MassSpringRope : MonoBehaviour
 
         for (int step = 0; step < subSteps; step++)
         {
-            SimulateVerlet(dt);
+            Simulate(dt);
 
-            for (int i = 0; i < constraintIterations; i++)
+            for (int i = 0; i < lengthCorrectionIterations; i++)
             {
-                ApplyDistanceConstraints();
+                CorrectLengthConstraints();
             }
+
+            BlendTowardTautLine();
         }
 
         UpdateLineRenderer();
@@ -121,8 +154,8 @@ public class MassSpringRope : MonoBehaviour
             return;
         }
 
-        nodes = new RopeNode[nodeCount];
-        distanceBetweenNodes = ropeLength / (nodeCount - 1);
+        nodes = new SpringRopeNode[nodeCount];
+        restLength = ropeLength / (nodeCount - 1);
 
         Vector3 start = pivotPoint.position;
         Vector3 end = ropeAttachPoint.position;
@@ -130,94 +163,236 @@ public class MassSpringRope : MonoBehaviour
         for (int i = 0; i < nodeCount; i++)
         {
             float t = (float)i / (nodeCount - 1);
+            Vector3 pos = Vector3.Lerp(start, end, t);
 
-            Vector3 position = Vector3.Lerp(start, end, t);
-
-            nodes[i].position = position;
-            nodes[i].previousPosition = position;
+            nodes[i].position = pos;
+            nodes[i].velocity = Vector3.zero;
+            nodes[i].force = Vector3.zero;
+            nodes[i].mass = nodeMass;
         }
 
         initialized = true;
         UpdateLineRenderer();
     }
 
-    private void SimulateVerlet(float dt)
+    private void Simulate(float dt)
     {
         int last = nodeCount - 1;
 
-        // تثبيت أول وآخر نقطة
         nodes[0].position = pivotPoint.position;
-        nodes[0].previousPosition = pivotPoint.position;
+        nodes[0].velocity = Vector3.zero;
 
         nodes[last].position = ropeAttachPoint.position;
-        nodes[last].previousPosition = ropeAttachPoint.position;
+        nodes[last].velocity = Vector3.zero;
 
-        Vector3 gravityStep = gravity * (dt * dt);
+        ClearForces();
+        ApplyGravity();
+        ApplySpringForces();
+        Integrate(dt);
 
-        // نحرك فقط النقاط الوسطية
-        for (int i = 1; i < last; i++)
-        {
-            Vector3 currentPosition = nodes[i].position;
-            Vector3 previousPosition = nodes[i].previousPosition;
-
-            Vector3 velocity = (currentPosition - previousPosition) * damping;
-
-            Vector3 newPosition = currentPosition + velocity + gravityStep;
-
-            nodes[i].previousPosition = currentPosition;
-            nodes[i].position = newPosition;
-        }
-
-        // إعادة تثبيت الأطراف بعد الحركة
         nodes[0].position = pivotPoint.position;
+        nodes[0].velocity = Vector3.zero;
+
         nodes[last].position = ropeAttachPoint.position;
+        nodes[last].velocity = Vector3.zero;
     }
 
-    private void ApplyDistanceConstraints()
+    private void ClearForces()
+    {
+        for (int i = 0; i < nodeCount; i++)
+        {
+            nodes[i].force = Vector3.zero;
+        }
+    }
+
+    private void ApplyGravity()
     {
         int last = nodeCount - 1;
 
-        // تثبيت الطرفين
+        for (int i = 1; i < last; i++)
+        {
+            nodes[i].force += gravity * nodes[i].mass * ropeGravityScale;
+        }
+    }
+
+    private void ApplySpringForces()
+    {
+        for (int i = 0; i < nodeCount - 1; i++)
+        {
+            int a = i;
+            int b = i + 1;
+
+            Vector3 delta = nodes[b].position - nodes[a].position;
+            float length = delta.magnitude;
+
+            if (length < 0.0001f)
+            {
+                continue;
+            }
+
+            Vector3 dir = delta / length;
+
+            float maxLength = restLength * maxStretchRatio;
+            float safeLength = Mathf.Min(length, maxLength);
+
+            float stretch = safeLength - restLength;
+
+            Vector3 springForce = stiffness * stretch * dir;
+
+            Vector3 relativeVelocity = nodes[b].velocity - nodes[a].velocity;
+            float velocityAlongSpring = Vector3.Dot(relativeVelocity, dir);
+
+            Vector3 dampingForce = springDamping * velocityAlongSpring * dir;
+
+            Vector3 totalForce = springForce + dampingForce;
+
+            bool aPinned = a == 0;
+            bool bPinned = b == nodeCount - 1;
+
+            if (!aPinned)
+            {
+                nodes[a].force += totalForce;
+            }
+
+            if (!bPinned)
+            {
+                nodes[b].force -= totalForce;
+            }
+        }
+    }
+
+    private void Integrate(float dt)
+    {
+        int last = nodeCount - 1;
+
+        for (int i = 1; i < last; i++)
+        {
+            Vector3 acceleration = nodes[i].force / nodes[i].mass;
+
+            nodes[i].velocity += acceleration * dt;
+            nodes[i].velocity *= globalDamping;
+
+            if (nodes[i].velocity.magnitude > maxVelocity)
+            {
+                nodes[i].velocity = nodes[i].velocity.normalized * maxVelocity;
+            }
+
+            nodes[i].position += nodes[i].velocity * dt;
+
+            if (!IsFinite(nodes[i].position))
+            {
+                ResetRope();
+                return;
+            }
+        }
+    }
+
+    private void CorrectLengthConstraints()
+    {
+        int last = nodeCount - 1;
+
         nodes[0].position = pivotPoint.position;
         nodes[last].position = ropeAttachPoint.position;
 
         for (int i = 0; i < nodeCount - 1; i++)
         {
-            Vector3 p1 = nodes[i].position;
-            Vector3 p2 = nodes[i + 1].position;
+            int a = i;
+            int b = i + 1;
 
-            Vector3 delta = p2 - p1;
-            float currentDistance = delta.magnitude;
+            Vector3 delta = nodes[b].position - nodes[a].position;
+            float length = delta.magnitude;
 
-            if (currentDistance < 0.0001f)
+            if (length < 0.0001f)
             {
                 continue;
             }
 
-            float difference = currentDistance - distanceBetweenNodes;
-            Vector3 correction = delta.normalized * difference;
+            Vector3 dir = delta / length;
+            float error = length - restLength;
+            Vector3 correction = error * dir;
 
-            bool firstIsPinned = i == 0;
-            bool secondIsPinned = i + 1 == last;
+            bool aPinned = a == 0;
+            bool bPinned = b == last;
 
-            if (firstIsPinned && !secondIsPinned)
+            if (aPinned && !bPinned)
             {
-                nodes[i + 1].position -= correction;
+                nodes[b].position -= correction;
             }
-            else if (!firstIsPinned && secondIsPinned)
+            else if (!aPinned && bPinned)
             {
-                nodes[i].position += correction;
+                nodes[a].position += correction;
             }
-            else if (!firstIsPinned && !secondIsPinned)
+            else if (!aPinned && !bPinned)
             {
-                nodes[i].position += correction * 0.5f;
-                nodes[i + 1].position -= correction * 0.5f;
+                nodes[a].position += correction * 0.5f;
+                nodes[b].position -= correction * 0.5f;
             }
         }
 
-        // تثبيت نهائي للطرفين
         nodes[0].position = pivotPoint.position;
         nodes[last].position = ropeAttachPoint.position;
+    }
+
+    private void BlendTowardTautLine()
+    {
+        int last = nodeCount - 1;
+
+        Vector3 start = pivotPoint.position;
+        Vector3 end = ropeAttachPoint.position;
+
+        Vector3 ropeVector = end - start;
+
+        if (ropeVector.magnitude < 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 ropeDir = ropeVector.normalized;
+
+        float angleFromVertical = Vector3.Angle(ropeDir, Vector3.down);
+
+        // يبدأ الانحناء بعد 35 درجة، ويصل لأقصاه عند 60 درجة
+        float angleFactor = Mathf.InverseLerp(35f, 60f, angleFromVertical);
+
+        // اتجاه الانحناء: باتجاه الجاذبية لكن عمودي على اتجاه الحبل
+        Vector3 bendDirection = Vector3.ProjectOnPlane(Vector3.down, ropeDir);
+
+        if (bendDirection.magnitude < 0.0001f)
+        {
+            bendDirection = Vector3.zero;
+        }
+        else
+        {
+            bendDirection.Normalize();
+        }
+
+        // مقدار الانحناء عند الزاوية الكبيرة
+        float maxSag = 0.18f;
+
+        for (int i = 1; i < last; i++)
+        {
+            float t = (float)i / (nodeCount - 1);
+
+            Vector3 straightPosition = Vector3.Lerp(start, end, t);
+
+            // الانحناء أكبر بالمنتصف وأصغر عند الأطراف
+            float middleWeight = Mathf.Sin(t * Mathf.PI);
+
+            Vector3 sagOffset = bendDirection * maxSag * angleFactor * middleWeight;
+
+            nodes[i].position = straightPosition + sagOffset;
+
+            // نخفف السرعة حتى ما يرجع يهتز بعنف
+            nodes[i].velocity *= 0.7f;
+        }
+
+        nodes[0].position = start;
+        nodes[last].position = end;
+    }
+
+    private bool IsFinite(Vector3 v)
+    {
+        return float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
     }
 
     private void SetupLineRenderer()
@@ -230,11 +405,12 @@ public class MassSpringRope : MonoBehaviour
         lineRenderer.useWorldSpace = true;
         lineRenderer.loop = false;
         lineRenderer.positionCount = nodeCount;
+
         lineRenderer.startWidth = ropeWidth;
         lineRenderer.endWidth = ropeWidth;
 
-        lineRenderer.numCornerVertices = 5;
-        lineRenderer.numCapVertices = 5;
+        lineRenderer.numCornerVertices = 6;
+        lineRenderer.numCapVertices = 6;
 
         if (ropeMaterial != null)
         {
@@ -253,6 +429,12 @@ public class MassSpringRope : MonoBehaviour
 
         for (int i = 0; i < nodeCount; i++)
         {
+            if (!IsFinite(nodes[i].position))
+            {
+                ResetRope();
+                return;
+            }
+
             lineRenderer.SetPosition(i, nodes[i].position);
         }
     }
